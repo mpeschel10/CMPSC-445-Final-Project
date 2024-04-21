@@ -53,7 +53,7 @@ He acquired 93 million words of text from 50 authors using the GDELT project.
 He then cleaned and preprocessed this data and published it so future authorship attribution research could test their techniques against it.
 He also tested a number of existing classification techniques,
 including Naive Bayes Classifier, Support Vector Machines, k-means clustering, and more, to features derived from the texts, and evaluated them.
-He found that SVMs on Bag-of-Words performed the best with f1 score of 0.73 of identifying the author of unknown texts,
+He found that SVMs on Bag-of-Words performed the best with f1 score of 0.86 of identifying the author of known texts,
 even compared to sophisticated semantic approaches.
 
 
@@ -73,7 +73,7 @@ You may also write down the contribution of each team members.
 (5 percents)
 
 * Implemented a model-generation algorithm for producing recognizing models for an author from their body of work.
-* Instantiated models for each of the 45 authors described in the dataset by Gungor.
+* Instantiated attention-transformer models for each of the 45 authors described in the dataset by Gungor.
 * Developed a solution for assigning authorship to text based on probability-of-generation.
 * Evaluated a novel method of authorship attribution by f1 score.
 * Utilized f1 scores to compare the novel method of authorship attribution to existing methods.
@@ -87,7 +87,7 @@ your work. You have to describe the figure here. (5 percents)
     \includegraphics[width=\linewidth]{block_diagram.png}
 \end{figure}
 
-We begin with the preprocessed texts written by the fifty authors from the GDELT dataset.
+We begin with the preprocessed texts written by the forty-five authors from the GDELT dataset.
 This data has been split into training and testing sets for us. Five of the authors have been
 removed entirely from the training set and exist only in the testing set; these authors make up \%34 of the testing data.
 It is therefore impossible to get better than \%66 accuracy with a model that cannot recognize "unknown" authors.
@@ -101,22 +101,45 @@ Each model produces a confidence score based on the likelihood of each token giv
 The model with the highest confidence is selected as the classification author.
 
 
-2.1 Dataset Description 
-Describe the datasets that you have used/collected. You must provide url /
-citations to the dataset if not collected by you. Use a table to show the properties
-or distributions of the dataset. If you have collected your own dataset, you must
-put it in a GitHub repository and put the link in this section. If required, put
-histograms, density distribution, or samples from your data here; also, state
+2.1 Dataset Description
+Describe the datasets that you have used/collected.
+Use a table to show the properties or distributions of the dataset.
+If required, put histograms, density distribution, or samples from your data here; also, state
 why you have chosen the data. Describe all the features.
 What are the attributes/ features (explain them)? What is/ are the tar-
 get variable(s). Using domain specific knowledge, explain why you chose the
 features. Describe the size of your dataset, its source and age.(10 percents)
 
 Our dataset is the "Victorian Era Authorship Attribution" dataset collected by Abdulmecit Gungor and distributed at https://archive.ics.uci.edu/dataset/454/victorian+era+authorship+attribution
+It consists of 254 Megabytes of comma separated value data. Each entry is a sample of text from an author.
+The first column is a variable-width string containing 1000 words. The second column is an integer identifying the author.
+
+There are 45 authors totalling 80 million words across a thousand books.
 \begin{figure}[h]
     \includegraphics[width=\linewidth]{author_table.pdf}
 \end{figure}
 
+The most prolific writer, James Baldwin, accounts for 10 million of those words; the least prolific, Charles Dickens wrote 350 thousand.
+You can see from the histogram that the words per author follow an exponential distribution, so our modeling will be tested on both large and small bodies of work.
+\begin{figure}[h]
+    \includegraphics[width=\linewidth]{author_statistics_histogram.pdf}
+\end{figure}
+
+
+The most popular words and least popular words are what you'd expect. Notice that the least popular word, "appeased" still has 178 instances.
+This is because part of Gungor's preprocessing was to include only the top 10000 most common words, cutting off the long tail.
+\begin{figure}[h]
+    \includegraphics[width=\linewidth]{word_counts_table.pdf}
+\end{figure}
+
+As with the words per author, the counts of words also exhibit an exponential distribution. Here is a histogram of the 100 most popular words:
+\begin{figure}[h]
+    \includegraphics[width=\linewidth]{word_counts_histogram.pdf}
+\end{figure}
+
+Gungor provides the words in text form. For example, here is a snippet from author 12, Mark Twain: "it money asked eagerly mrs drew her shawl tightly round her massive form i don t know rightly what it is she said in her heavy voice"
+All punctuation and capitalization have been stripped out. Apostrophes and hypens are treated as separating characters, so abbreviations like "don't" show up as "don" and "t".
+As a further step, we assign a random id to each word and convert the strings of text into tensors. For example, 
 
 
 2.2 Algorithms Used or Methodology
