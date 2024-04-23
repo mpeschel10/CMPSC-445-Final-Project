@@ -7,10 +7,135 @@
 # Specifically, he loads a "Vocabulary_wstopwords.mat" file, then accesses the "shortened_vocab" member of it.
 # I don't know where the .mat files are, though.
 
+import sqlite3
+
+class SQLite3Wrapper:
+    def __init__(self, path='database.db'):
+        self.connection = sqlite3.connect(path)
+        self.cursor = self.connection.cursor()
+
+    def table_exists(self, table_name):
+        result = self.cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+        return result.fetchone() != None
+    
+    def execute(self, *args, **kwargs):
+        return self.cursor.execute(*args, **kwargs)
+    
+    def print(self, *args, **kwargs):
+        print(*args)
+        print(kwargs)
+
+    def ensure_create(self, table_name, attributes):
+        if not self.table_exists(table_name):
+            print('Creating table', table_name, 'with attributes', attributes)
+            self.execute(f'CREATE TABLE {table_name}({attributes})')
+    
+    def count(self, table_name):
+        return self.execute(f'SELECT COUNT(*) FROM {table_name}').fetchone()[0]
+    
+    def select(self, table_name):
+        return self.execute(f'SELECT * FROM {table_name}').fetchall()
+    
+    def get(self, query, params=[], default=None):
+        result = self.execute(query, params)
+        result = result.fetchone()
+        if result is None:
+            return default
+        else:
+            return result[0]
+    
+    def print(self, table_name):
+        for row in self.execute(f'SELECT * FROM {table_name}').fetchall():
+            print(row)
+    
+
 import os
+from pprint import pprint
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+def initialize_data(w):
+    print('Loading raw data from csv file.')
+    data = pd.read_csv('sources/dataset/Gungor_2018_VictorianAuthorAttribution_data-train.csv', encoding='latin-1')
+    print('Putting raw data into sqlite table.')
+    for index, row in data.iterrows():
+        w.execute('INSERT INTO data VALUES (?, ?)', (row['text'], row['author']))
+        print(row['author'])
+    w.connection.commit()
+    print('sqlite data table ready.')
+
+def initialize_word_counts(w):
+    # Not sure why I bothered making this.
+    print('Counting words.')
+    # w.execute('DELETE FROM word_counts')
+    rows = w.execute('SELECT * FROM data').fetchall()
+    for row in rows:
+        text, author = row
+        print('Author ', author, end='\r')
+        for word in text.rstrip(' ').split(' '):
+            old_count = w.execute('SELECT count FROM word_counts WHERE word = ?', (word,)).fetchone()
+            if old_count is None:
+                w.execute('INSERT INTO word_counts (word, count) VALUES (?, ?)', (word, 1))
+            else:
+                old_count ,= old_count
+                w.execute('UPDATE word_counts SET count = ? WHERE word = ?', (old_count + 1, word))
+        
+    w.connection.commit()
+
+    w.print('word_counts')
+    print(w.count('word_counts'))
+
+def initialize_id_word(w):
+    rows = w.execute('SELECT * FROM data').fetchall()
+    for row in rows:
+        text, author = row
+        print('Author ', author, end='\r')
+        for word in text.rstrip(' ').split(' '):
+            w.execute('INSERT OR IGNORE INTO id_word (word) VALUES (?)', [word])
+    print()
+    
+    w.print('id_word')
+    w.connection.commit()
+
+def main():
+    w = SQLite3Wrapper()
+    w.ensure_create('data', 'words TEXT, author INT')
+    
+    # w.ensure_create('word_counts', 'word VARCHAR(255), count INT')
+    # w.execute('CREATE UNIQUE INDEX IF NOT EXISTS index_word ON word_counts (word)')
+    
+    # w.execute('DROP TABLE IF EXISTS id_word')
+    w.ensure_create('id_word', 'id INTEGER PRIMARY KEY, word VARCHAR(255) UNIQUE')
+    w.execute('CREATE UNIQUE INDEX IF NOT EXISTS index_word ON id_word (word)')
+
+    if w.count('data') < 53678: initialize_data(w)
+    if False: initialize_word_counts(w)
+    if w.count('id_word') < 10000: initialize_id_word(w)
+    
+    word_id = {word:id for id, word in w.select('id_word')}
+    
+    rows = []
+    print('Loading rows into Python list')
+    for text, author in w.select('data'):
+        words = text.rstrip(' ').split(' ')
+        row = [word_id[word] for word in words] + [author]
+        rows.append(row)
+        print('Author:', author, end='\r')
+    print('\nDone loading rows')
+    
+    print('Loading into dataframe')
+    data = pd.DataFrame(rows, columns=list(range(1000)) + ['author'])
+
+    train_data, test_data = train_test_split(data, train_size=0.8, random_state=6128)
+    print(train_data)
+
+# main()
+# raise SystemExit()
 
 # hyperparameters
 batch_size = 24 # how many independent sequences will we process in parallel?
@@ -19,6 +144,8 @@ max_iters = 5000
 eval_interval = 500
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu'
+# print(device)
 eval_iters = 200
 n_embd = 64
 n_head = 8
@@ -31,21 +158,30 @@ torch.manual_seed(2965)
 # nope, this is now a bunch of text from the 50 Victorian novelists dataset, author 26
 with open('data/author26.txt', 'r', encoding='utf-8') as f:
     text = f.read()
+text = 'wabbajack'
 
 chars = sorted(list(set(text)))
 vocab_size = len(chars)
 
 stoi = { ch:i for i,ch in enumerate(chars) }
 itos = { i:ch for i,ch in enumerate(chars) }
+pprint(stoi)
 
 def encode(s):
     return [stoi[c] if c in stoi else stoi['<unk>'] for c in s] # encoder: take a string, output a list of integers
 decode = lambda l: ''.join([itos[i] for i in l]) # decoder: take a list of integers, output a string
 
-# print(encode("hii there"))
+print(encode(text))
+columns = list(range(len(encode(text)) - 1)) + ['author']
+print('columns:', columns)
+data = pd.DataFrame([encode(text)], columns=columns)
+print('santa claus is real')
+print(data)
+data = torch.tensor(data.values, dtype=torch.short)
+print(data)
+raise SystemExit()
 # print(decode(encode("hii there")))
 
-data = torch.tensor(encode(text), dtype=torch.long)
 # print(data.shape, data.dtype)
 # print(data[:1000]) # the 1000 characters we looked at earier will to the GPT look like this
 
